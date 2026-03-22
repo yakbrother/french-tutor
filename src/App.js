@@ -77,6 +77,81 @@ const WELCOME_MESSAGES = {
   spelling: "Bonjour ! Time for some orthographe practice. I'll describe a sentence and you write it in French — accents and all.\n\n**Exercice 1 :** Write this in French: *\"The little girl is eating a green apple in the garden.\"*\n\n(Think about agreements and the accent on *à* vs *a*!)",
 };
 
+const ALL_TOPIC_LEVELS = ["A1", "A2", "B1", "B1+", "B2"];
+
+const LEVEL_COLORS = {
+  A1: "#7eb8a4",
+  A2: "#7eaab8",
+  B1: "#c8a96e",
+  "B1+": "#b8956e",
+  B2: "#a47eb8",
+};
+
+const TOPICS = [
+  { id: "articles_a1", level: "A1", label: "Articles", icon: "📝", description: "le, la, les, un, une, du, de la" },
+  { id: "present_tense_a1", level: "A1", label: "Présent", icon: "🕐", description: "être, avoir, and regular -er/-ir verbs" },
+  { id: "negation_a1", level: "A1", label: "Négation de base", icon: "🚫", description: "ne…pas, ne…jamais, ne…rien" },
+  { id: "questions_a1", level: "A1", label: "Questions simples", icon: "❓", description: "est-ce que, intonation, and basic inversion" },
+  { id: "gender_a1", level: "A1", label: "Genre et nombre", icon: "⚖️", description: "Masculine/feminine nouns and plural forms" },
+  { id: "passe_compose_a2", level: "A2", label: "Passé composé", icon: "⏮️", description: "avoir/être + past participle, common irregulars" },
+  { id: "imparfait_a2", level: "A2", label: "Imparfait", icon: "🌀", description: "Background actions, habits, and descriptions in the past" },
+  { id: "object_pronouns_a2", level: "A2", label: "Pronoms COD/COI", icon: "👈", description: "le, la, les, lui, leur — direct and indirect objects" },
+  { id: "prepositions_a2", level: "A2", label: "Prépositions", icon: "🗺️", description: "de, à, en, dans, sur, sous — usage and gotchas" },
+  { id: "possessives_a2", level: "A2", label: "Adjectifs possessifs", icon: "🏠", description: "mon/ma/mes, ton/ta/tes, son/sa/ses, and agreement traps" },
+  { id: "y_vs_en_b1", level: "B1", label: "Y vs En", icon: "⚖️", description: "Adverbial pronouns — the most-confused pair in French" },
+  { id: "relative_pronouns_b1", level: "B1", label: "Pronoms relatifs", icon: "🔗", description: "qui, que, dont, où, lequel — connecting clauses" },
+  { id: "subjunctive_b1", level: "B1", label: "Subjonctif présent", icon: "🌊", description: "Triggers, formation, and the most common traps" },
+  { id: "conditional_b1", level: "B1", label: "Conditionnel", icon: "💭", description: "Would, hypotheticals, and polite requests" },
+  { id: "reflexive_b1", level: "B1", label: "Verbes pronominaux", icon: "🔄", description: "Reflexive, reciprocal, and idiomatic pronominal verbs" },
+  { id: "subj_vs_ind_b1plus", level: "B1+", label: "Subj. vs Indicatif", icon: "🤔", description: "Choosing the right mood — doubt vs. certainty" },
+  { id: "si_clauses_b1plus", level: "B1+", label: "Phrases en si", icon: "🔀", description: "Conditional si-clauses: tense sequences and meanings" },
+  { id: "passive_b1plus", level: "B1+", label: "Voix passive", icon: "↩️", description: "Être + past participle, agent complement with par/de" },
+  { id: "double_pronouns_b1plus", level: "B1+", label: "Double pronoms", icon: "👥", description: "Order rules when combining two object pronouns" },
+  { id: "pluperfect_b1plus", level: "B1+", label: "Plus-que-parfait", icon: "⏪", description: "The past-of-the-past — sequencing events correctly" },
+  { id: "subj_passe_b2", level: "B2", label: "Subjonctif passé", icon: "🌊", description: "Past subjunctive — forms, triggers, and nuance" },
+  { id: "inversion_b2", level: "B2", label: "Inversion", icon: "🔃", description: "Stylistic and interrogative inversion in formal registers" },
+  { id: "register_b2", level: "B2", label: "Registre", icon: "🎭", description: "Formal vs. informal — vocabulary, structure, and tone" },
+  { id: "idioms_b2", level: "B2", label: "Expressions idiomatiques", icon: "🗣️", description: "High-frequency idioms that trip up B2 learners" },
+  { id: "complex_syntax_b2", level: "B2", label: "Syntaxe complexe", icon: "🧩", description: "Gerunds, participles, and layered subordination" },
+];
+
+const PROGRESS_KEY = "french_tutor_progress";
+
+const loadProgress = () => {
+  try {
+    return JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
+  } catch {
+    return {};
+  }
+};
+
+const getTopicSystemPrompt = (topic, level) =>
+  `You are a French grammar tutor giving a focused lesson on: "${topic.label}" (${topic.description}).
+
+Your student is an English-speaking adult targeting ${level} level French. They are learning French partly for citizenship purposes.
+
+Teach strictly standard mainland French (français standard). No regional variants.
+
+Structure the lesson around "${topic.label}":
+1. Begin with a concise explanation of the concept (2–3 sentences in English) followed by the first exercise.
+2. For each student answer:
+   - If correct: confirm with ✅ and a brief reinforcing note, then give the next exercise
+   - If wrong: show ❌ [what they wrote] → ✅ [correct form] and 📌 Règle: [brief rule in English], then give the next exercise
+3. Gradually increase difficulty across exercises.
+4. Highlight common "gotchas" English speakers make with this topic.
+5. After every 4–5 exercises, offer a short summary of what was covered.
+
+Keep exercises short (1–2 sentences). Be warm, precise, and focused on "${topic.label}".`;
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return "";
+  const today = new Date().toISOString().split("T")[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+  if (dateStr === today) return "Today";
+  if (dateStr === yesterday) return "Yesterday";
+  return dateStr;
+};
+
 export default function FrenchTutor() {
   const [mode, setMode] = useState(null);
   const [level, setLevel] = useState("B1");
@@ -85,6 +160,9 @@ export default function FrenchTutor() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [sessionStats, setSessionStats] = useState({ exchanges: 0, corrections: 0 });
+  const [topic, setTopic] = useState(null);
+  const [topicProgress, setTopicProgress] = useState(() => loadProgress());
+  const [topicFilter, setTopicFilter] = useState("All");
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -94,8 +172,22 @@ export default function FrenchTutor() {
 
   const startMode = (m) => {
     setMode(m);
+    setTopic(null);
     setError(null);
     setMessages([{ role: "assistant", content: WELCOME_MESSAGES[m] }]);
+    setSessionStats({ exchanges: 0, corrections: 0 });
+    setTimeout(() => textareaRef.current?.focus(), 100);
+  };
+
+  const startTopic = (t) => {
+    setTopic(t);
+    setMode("grammar");
+    setLevel(t.level);
+    setError(null);
+    setMessages([{
+      role: "assistant",
+      content: `Bonjour ! Today's focus: **${t.label}** · Niveau ${t.level}\n\n${t.description}\n\nType **"prêt"** or **"ready"** to begin — or just ask me a question about this topic!`,
+    }]);
     setSessionStats({ exchanges: 0, corrections: 0 });
     setTimeout(() => textareaRef.current?.focus(), 100);
   };
@@ -110,6 +202,7 @@ export default function FrenchTutor() {
     setError(null);
 
     const config = MODE_CONFIG[mode];
+    const systemPrompt = topic ? getTopicSystemPrompt(topic, level) : config.systemPrompt(level);
     const apiMessages = newMessages.map((m) => ({ role: m.role, content: m.content }));
 
     try {
@@ -117,7 +210,7 @@ export default function FrenchTutor() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system: config.systemPrompt(level),
+          system: systemPrompt,
           messages: apiMessages,
         }),
       });
@@ -135,6 +228,20 @@ export default function FrenchTutor() {
         exchanges: s.exchanges + 1,
         corrections: s.corrections + (hasCorrection ? 1 : 0),
       }));
+      if (topic) {
+        setTopicProgress((prev) => {
+          const current = prev[topic.id] || { exchanges: 0 };
+          const next = {
+            ...prev,
+            [topic.id]: {
+              exchanges: current.exchanges + 1,
+              lastPracticed: new Date().toISOString().split("T")[0],
+            },
+          };
+          localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
+          return next;
+        });
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -215,7 +322,7 @@ export default function FrenchTutor() {
         background: "#0f0e0c",
         backgroundImage: "radial-gradient(ellipse at 20% 50%, rgba(40,30,15,0.8) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(15,25,30,0.6) 0%, transparent 50%)",
         fontFamily: "'Georgia', 'Times New Roman', serif",
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
         padding: "40px 20px",
         color: "#e8e0d0",
       }}>
@@ -223,6 +330,8 @@ export default function FrenchTutor() {
           @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
           .mode-card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.2) !important; }
           .mode-card { transition: transform 0.2s, border-color 0.2s; cursor: pointer; }
+          .topic-card:hover { transform: translateY(-2px); border-color: rgba(200,169,110,0.3) !important; }
+          .topic-card { transition: transform 0.2s, border-color 0.2s; cursor: pointer; }
         `}</style>
 
         <div style={{ textAlign: "center", marginBottom: 48, animation: "fadeUp 0.6s ease" }}>
@@ -271,6 +380,67 @@ export default function FrenchTutor() {
           ))}
         </div>
 
+        <div style={{ marginTop: 60, maxWidth: 900, width: "100%", animation: "fadeUp 0.6s ease 0.3s both" }}>
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <div style={{ fontSize: 13, letterSpacing: "0.25em", color: "#8a7a5a", textTransform: "uppercase", marginBottom: 6 }}>
+              Sujets de grammaire
+            </div>
+            <div style={{ fontSize: 13, color: "#5a5040", fontStyle: "italic" }}>
+              Click a topic to start a focused lesson with exercises and corrections
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 24, flexWrap: "wrap" }}>
+            {["All", ...ALL_TOPIC_LEVELS].map((l) => (
+              <button key={l} onClick={() => setTopicFilter(l)} style={{
+                padding: "5px 14px",
+                border: "1px solid",
+                borderColor: topicFilter === l ? "#c8a96e" : "rgba(255,255,255,0.1)",
+                background: topicFilter === l ? "rgba(200,169,110,0.15)" : "transparent",
+                color: topicFilter === l ? "#c8a96e" : "#6a6050",
+                borderRadius: 20, cursor: "pointer", fontSize: 12, letterSpacing: "0.05em",
+                transition: "all 0.2s",
+              }}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))", gap: 10 }}>
+            {(topicFilter === "All" ? TOPICS : TOPICS.filter((t) => t.level === topicFilter)).map((t) => {
+              const prog = topicProgress[t.id] || { exchanges: 0 };
+              const practiced = prog.exchanges > 0;
+              return (
+                <div key={t.id} className="topic-card" onClick={() => startTopic(t)} style={{
+                  background: practiced ? "rgba(200,169,110,0.06)" : "rgba(255,255,255,0.02)",
+                  border: practiced ? "1px solid rgba(200,169,110,0.2)" : "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: 12, padding: "14px 12px",
+                  display: "flex", flexDirection: "column", gap: 8,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 18 }}>{t.icon}</span>
+                    <span style={{
+                      fontSize: 10, padding: "2px 6px", borderRadius: 8,
+                      background: "rgba(255,255,255,0.04)",
+                      color: LEVEL_COLORS[t.level] || "#8a7a5a",
+                      letterSpacing: "0.05em",
+                    }}>{t.level}</span>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, color: "#d0c8b8", marginBottom: 3 }}>{t.label}</div>
+                    <div style={{ fontSize: 11, color: "#5a5040", lineHeight: 1.4 }}>{t.description}</div>
+                  </div>
+                  {practiced && (
+                    <div style={{ fontSize: 10, color: "#7a6a50", marginTop: "auto" }}>
+                      💬 {prog.exchanges} échange{prog.exchanges !== 1 ? "s" : ""} · {formatDate(prog.lastPracticed)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <div style={{ marginTop: 48, fontSize: 12, color: "#4a4030", animation: "fadeUp 0.6s ease 0.4s both" }}>
           Shift+Enter for new line · Enter to send
         </div>
@@ -307,11 +477,11 @@ export default function FrenchTutor() {
         flexShrink: 0,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={() => setMode(null)} style={{
+          <button onClick={() => { setMode(null); setTopic(null); }} style={{
             background: "none", border: "1px solid rgba(255,255,255,0.1)",
             color: "#7a7060", cursor: "pointer", borderRadius: 8, padding: "4px 10px", fontSize: 12,
           }}>← Retour</button>
-          <div style={{ fontSize: 18, color: cfg.color }}>{cfg.icon} {cfg.label}</div>
+          <div style={{ fontSize: 18, color: cfg.color }}>{cfg.icon} {cfg.label}{topic ? ` · ${topic.label}` : ""}</div>
           <div style={{
             fontSize: 11, padding: "2px 8px", borderRadius: 10,
             background: "rgba(200,169,110,0.1)", color: "#c8a96e", letterSpacing: "0.05em",
