@@ -295,15 +295,25 @@ export default function FrenchTutor() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Persist active conversation to localStorage whenever it changes
+  // Persist active conversation to localStorage, debounced to avoid multiple writes per exchange
   useEffect(() => {
-    if (mode && messages.length > 0) {
-      localStorage.setItem(CHAT_KEY, JSON.stringify({ mode, topic, level, messages, sessionStats }));
-    }
+    if (!mode || messages.length === 0) return;
+    const timeoutId = setTimeout(() => {
+      try {
+        localStorage.setItem(CHAT_KEY, JSON.stringify({ mode, topic, level, messages, sessionStats }));
+      } catch {
+        // Ignore storage errors (quota exceeded, private mode, etc.) so chat keeps working
+      }
+    }, 200);
+    return () => clearTimeout(timeoutId);
   }, [messages, mode, topic, level, sessionStats]);
 
   const clearSavedSession = () => {
-    localStorage.removeItem(CHAT_KEY);
+    try {
+      localStorage.removeItem(CHAT_KEY);
+    } catch {
+      // Ignore storage errors so dismiss/start-fresh can't break the UI
+    }
     setSavedSession(null);
   };
 
@@ -319,7 +329,7 @@ export default function FrenchTutor() {
 
   const goHome = () => {
     if (messages.length > 1) {
-      const confirmed = window.confirm("Leave this session? Your progress will be saved and you can resume later.");
+      const confirmed = window.confirm("Quitter cette session ? Votre progression sera enregistrée et vous pourrez la reprendre plus tard.");
       if (!confirmed) return;
     }
     // Refresh savedSession from localStorage so the resume banner appears on the home screen
@@ -336,6 +346,9 @@ export default function FrenchTutor() {
     setLevel(s.level || "B1");
     setMessages(s.messages || []);
     setSessionStats(s.sessionStats || { exchanges: 0, corrections: 0 });
+    setError(null);
+    setInput("");
+    setLoading(false);
     setSavedSession(null);
     setTimeout(() => textareaRef.current?.focus(), 100);
   };
@@ -779,7 +792,7 @@ export default function FrenchTutor() {
             border: `1px solid ${t.charBtnBorder}`,
             color: t.charBtnText, borderRadius: 8, cursor: "pointer",
             fontSize: 15, fontFamily: "inherit", transition: "background 0.15s",
-            flexShrink: 0, minHeight: 40,
+            flexShrink: 0, minHeight: 44, minWidth: 44,
           }}>{c}</button>
         ))}
       </div>
