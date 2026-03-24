@@ -215,6 +215,15 @@ const TOPICS = [
 ];
 
 const PROGRESS_KEY = "french_tutor_progress";
+const CHAT_KEY = "french_tutor_chat";
+
+const loadSavedSession = () => {
+  try {
+    return JSON.parse(localStorage.getItem(CHAT_KEY)) || null;
+  } catch {
+    return null;
+  }
+};
 
 const loadProgress = () => {
   try {
@@ -263,6 +272,8 @@ export default function FrenchTutor() {
   const [topicProgress, setTopicProgress] = useState(() => loadProgress());
   const [topicFilter, setTopicFilter] = useState("All");
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "dark");
+  // Saved session for "resume" feature
+  const [savedSession, setSavedSession] = useState(() => loadSavedSession());
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -284,7 +295,30 @@ export default function FrenchTutor() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Persist active conversation to localStorage, debounced to avoid multiple writes per exchange
+  useEffect(() => {
+    if (!mode || messages.length === 0) return;
+    const timeoutId = setTimeout(() => {
+      try {
+        localStorage.setItem(CHAT_KEY, JSON.stringify({ mode, topic, level, messages, sessionStats }));
+      } catch {
+        // Ignore storage errors (quota exceeded, private mode, etc.) so chat keeps working
+      }
+    }, 200);
+    return () => clearTimeout(timeoutId);
+  }, [messages, mode, topic, level, sessionStats]);
+
+  const clearSavedSession = () => {
+    try {
+      localStorage.removeItem(CHAT_KEY);
+    } catch {
+      // Ignore storage errors so dismiss/start-fresh can't break the UI
+    }
+    setSavedSession(null);
+  };
+
   const startMode = (m) => {
+    clearSavedSession();
     setMode(m);
     setTopic(null);
     setError(null);
@@ -293,9 +327,34 @@ export default function FrenchTutor() {
     setTimeout(() => textareaRef.current?.focus(), 100);
   };
 
-  const goHome = () => { setMode(null); setTopic(null); };
+  const goHome = () => {
+    if (messages.length > 1) {
+      const confirmed = window.confirm("Quitter cette session ? Votre progression sera enregistrée et vous pourrez la reprendre plus tard.");
+      if (!confirmed) return;
+    }
+    // Refresh savedSession from localStorage so the resume banner appears on the home screen
+    setSavedSession(loadSavedSession());
+    setMode(null);
+    setTopic(null);
+  };
+
+  const resumeSession = () => {
+    const s = savedSession;
+    if (!s) return;
+    setMode(s.mode);
+    setTopic(s.topic || null);
+    setLevel(s.level || "B1");
+    setMessages(s.messages || []);
+    setSessionStats(s.sessionStats || { exchanges: 0, corrections: 0 });
+    setError(null);
+    setInput("");
+    setLoading(false);
+    setSavedSession(null);
+    setTimeout(() => textareaRef.current?.focus(), 100);
+  };
 
   const startTopic = (tp) => {
+    clearSavedSession();
     setTopic(tp);
     setMode("grammar");
     setLevel(tp.level);
@@ -439,7 +498,7 @@ export default function FrenchTutor() {
         backgroundImage: t.pageGradient,
         fontFamily: "'Radio Canada', sans-serif",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start",
-        padding: "40px 20px",
+        padding: "clamp(20px, 5vw, 40px) 20px",
         color: t.text,
       }}>
         <style>{`
@@ -448,6 +507,8 @@ export default function FrenchTutor() {
           .mode-card { transition: transform 0.2s, border-color 0.2s; cursor: pointer; }
           .topic-card:hover { transform: translateY(-2px); border-color: ${t.topicCardHoverBorder} !important; }
           .topic-card { transition: transform 0.2s, border-color 0.2s; cursor: pointer; }
+          .resume-btn:hover { opacity: 0.85; }
+          .dismiss-btn:hover { opacity: 0.7; }
         `}</style>
 
         <div style={{ width: "100%", maxWidth: 900, display: "flex", justifyContent: "flex-end", marginBottom: 12, animation: "fadeUp 0.4s ease" }}>
@@ -456,13 +517,53 @@ export default function FrenchTutor() {
             title={t.toggleTitle}
             style={{
               background: "none", border: `1px solid ${t.btnBorder}`,
-              borderRadius: 8, padding: "5px 10px", cursor: "pointer",
-              fontSize: 16, lineHeight: 1,
+              borderRadius: 8, padding: "8px 14px", cursor: "pointer",
+              fontSize: 18, lineHeight: 1, minWidth: 44, minHeight: 44,
+              display: "flex", alignItems: "center", justifyContent: "center",
             }}
           >{t.toggleIcon}</button>
         </div>
 
-        <div style={{ textAlign: "center", marginBottom: 48, animation: "fadeUp 0.6s ease" }}>
+        {/* Resume previous session banner */}
+        {savedSession && savedSession.messages && savedSession.messages.length > 1 && (
+          <div style={{
+            width: "100%", maxWidth: 800,
+            background: t.activeBtnBg,
+            border: `1px solid ${t.accent}`,
+            borderRadius: 14, padding: "16px 20px",
+            marginBottom: 28, display: "flex", alignItems: "center",
+            gap: 14, flexWrap: "wrap",
+            animation: "fadeUp 0.5s ease",
+          }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <div style={{ fontSize: 14, color: t.accent, fontWeight: 500, marginBottom: 3 }}>
+                💬 Session en cours — {MODE_CONFIG[savedSession.mode]?.label}{savedSession.topic ? ` · ${savedSession.topic.label}` : ""}
+              </div>
+              <div style={{ fontSize: 12, color: t.textMuted }}>
+                {savedSession.sessionStats?.exchanges || 0} échanges · Niveau {savedSession.level}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="resume-btn" onClick={resumeSession} style={{
+                padding: "10px 20px", borderRadius: 10,
+                background: t.accent, border: "none",
+                color: t.sendBtnText, fontSize: 14,
+                cursor: "pointer", fontFamily: "inherit",
+                fontWeight: 500, minHeight: 44,
+                transition: "opacity 0.2s",
+              }}>Reprendre →</button>
+              <button className="dismiss-btn" onClick={clearSavedSession} style={{
+                padding: "10px 14px", borderRadius: 10,
+                background: "none", border: `1px solid ${t.btnBorder}`,
+                color: t.textMuted, fontSize: 13,
+                cursor: "pointer", fontFamily: "inherit",
+                minHeight: 44, transition: "opacity 0.2s",
+              }}>✕</button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ textAlign: "center", marginBottom: "clamp(24px, 5vw, 48px)", animation: "fadeUp 0.6s ease" }}>
           <div style={{ fontSize: 13, letterSpacing: "0.3em", color: t.headingMuted, textTransform: "uppercase", marginBottom: 12 }}>
             Ton professeur particulier
           </div>
@@ -472,16 +573,17 @@ export default function FrenchTutor() {
           <div style={{ fontSize: 15, color: t.subheading, fontStyle: "italic" }}>A2 → B2 · Grammar · Conversation · Orthographe</div>
         </div>
 
-        <div style={{ display: "flex", gap: 16, marginBottom: 40, flexWrap: "wrap", justifyContent: "center", animation: "fadeUp 0.6s ease 0.1s both" }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 40, flexWrap: "wrap", justifyContent: "center", animation: "fadeUp 0.6s ease 0.1s both" }}>
           <div style={{ fontSize: 13, color: t.textMuted, marginRight: 8, alignSelf: "center" }}>Niveau cible :</div>
           {LEVELS.map((l) => (
             <button key={l} onClick={() => setLevel(l)} style={{
-              padding: "8px 20px", border: "1px solid",
+              padding: "10px 20px", border: "1px solid",
               borderColor: level === l ? t.accent : t.btnBorder,
               background: level === l ? t.activeBtnBg : "transparent",
               color: level === l ? t.accent : t.textMuted,
-              borderRadius: 20, cursor: "pointer", fontSize: 13, letterSpacing: "0.05em",
+              borderRadius: 20, cursor: "pointer", fontSize: 14, letterSpacing: "0.05em",
               transition: "all 0.2s", fontFamily: "inherit",
+              minHeight: 44,
             }}>
               {l}
             </button>
@@ -579,13 +681,15 @@ export default function FrenchTutor() {
   const cfg = MODE_CONFIG[mode];
 
   return (
-    <div style={{
+    <div className="chat-root" style={{
       height: "100vh", display: "flex", flexDirection: "column",
       background: t.pageBg,
       fontFamily: "'Radio Canada', sans-serif",
       color: t.text,
     }}>
       <style>{`
+        /* Use 100dvh (dynamic viewport height) when supported — fixes mobile browser chrome overlap */
+        @supports (height: 100dvh) { .chat-root { height: 100dvh !important; } }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
         textarea:focus { outline: none; }
@@ -593,49 +697,64 @@ export default function FrenchTutor() {
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${t.scrollbar}; border-radius: 2px; }
+        .char-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+        .char-bar::-webkit-scrollbar { display: none; }
         .char-btn:hover { background: ${t.charBtnHover} !important; }
         .send-btn:hover { opacity: 0.85; }
+        .back-btn:hover { opacity: 0.7; }
       `}</style>
 
+      {/* Header — two rows on small screens to avoid overflow */}
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "14px 20px",
         borderBottom: `1px solid ${t.headerBorder}`,
         background: t.headerBg,
         flexShrink: 0,
+        padding: "10px 16px",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={goHome} style={{
-            background: "none", border: `1px solid ${t.btnBorder}`,
-            color: t.textMuted, cursor: "pointer", borderRadius: 8, padding: "4px 10px", fontSize: 12,
-            fontFamily: "inherit",
-          }}>← Retour</button>
-          <div style={{ fontSize: 18, color: cfg.color }}>{cfg.icon} {cfg.label}{topic ? ` · ${topic.label}` : ""}</div>
-          <div style={{
-            fontSize: 11, padding: "2px 8px", borderRadius: 10,
-            background: t.levelBadgeBg, color: t.levelBadge, letterSpacing: "0.05em",
-          }}>{level}</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ display: "flex", gap: 16, fontSize: 12, color: t.statText }}>
-            <span>💬 {sessionStats.exchanges} échanges</span>
-            {mode !== "conversation" && <span>📝 {sessionStats.corrections} corrections</span>}
-          </div>
-          <button
-            onClick={toggleTheme}
-            title={t.toggleTitle}
-            style={{
+        {/* Top row: back button, mode label, level badge, theme toggle */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <button className="back-btn" onClick={goHome} style={{
               background: "none", border: `1px solid ${t.btnBorder}`,
-              borderRadius: 8, padding: "4px 8px", cursor: "pointer",
-              fontSize: 14, lineHeight: 1,
-            }}
-          >{t.toggleIcon}</button>
+              color: t.textMuted, cursor: "pointer", borderRadius: 8,
+              padding: "8px 12px", fontSize: 13,
+              fontFamily: "inherit", flexShrink: 0,
+              minHeight: 44, minWidth: 44,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "opacity 0.2s",
+            }}>← Retour</button>
+            <div style={{ fontSize: 16, color: cfg.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {cfg.icon} {cfg.label}{topic ? ` · ${topic.label}` : ""}
+            </div>
+            <div style={{
+              fontSize: 11, padding: "2px 8px", borderRadius: 10, flexShrink: 0,
+              background: t.levelBadgeBg, color: t.levelBadge, letterSpacing: "0.05em",
+            }}>{level}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+            <button
+              onClick={toggleTheme}
+              title={t.toggleTitle}
+              style={{
+                background: "none", border: `1px solid ${t.btnBorder}`,
+                borderRadius: 8, padding: "8px 10px", cursor: "pointer",
+                fontSize: 16, lineHeight: 1,
+                minWidth: 44, minHeight: 44,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >{t.toggleIcon}</button>
+          </div>
+        </div>
+        {/* Bottom row: session stats */}
+        <div style={{ display: "flex", gap: 14, fontSize: 12, color: t.statText, marginTop: 6, paddingLeft: 2 }}>
+          <span>💬 {sessionStats.exchanges} échanges</span>
+          {mode !== "conversation" && <span>📝 {sessionStats.corrections} corrections</span>}
         </div>
       </div>
 
       <div style={{
         flex: 1, overflowY: "auto",
-        padding: "20px 20px 10px",
+        padding: "20px 16px 10px",
         maxWidth: 760, width: "100%", margin: "0 auto", alignSelf: "stretch",
         boxSizing: "border-box",
       }}>
@@ -660,22 +779,26 @@ export default function FrenchTutor() {
         <div ref={bottomRef} />
       </div>
 
-      <div style={{
-        maxWidth: 760, width: "100%", margin: "0 auto", padding: "0 20px",
-        display: "flex", gap: 6, flexWrap: "wrap",
+      {/* Special character bar — scrolls horizontally on narrow screens */}
+      <div className="char-bar" style={{
+        maxWidth: 760, width: "100%", margin: "0 auto",
+        padding: "6px 16px",
+        display: "flex", gap: 6, flexWrap: "nowrap",
+        boxSizing: "border-box",
       }}>
         {SPECIAL_CHARS.map((c) => (
           <button key={c} className="char-btn" onClick={() => insertChar(c)} style={{
-            padding: "4px 9px", background: t.charBtnBg,
+            padding: "8px 11px", background: t.charBtnBg,
             border: `1px solid ${t.charBtnBorder}`,
-            color: t.charBtnText, borderRadius: 6, cursor: "pointer",
-            fontSize: 14, fontFamily: "inherit", transition: "background 0.15s",
+            color: t.charBtnText, borderRadius: 8, cursor: "pointer",
+            fontSize: 15, fontFamily: "inherit", transition: "background 0.15s",
+            flexShrink: 0, minHeight: 44, minWidth: 44,
           }}>{c}</button>
         ))}
       </div>
 
       <div style={{
-        padding: "12px 20px 20px",
+        padding: "8px 16px 20px",
         maxWidth: 760, width: "100%", margin: "0 auto", boxSizing: "border-box",
       }}>
         <div style={{
@@ -689,20 +812,21 @@ export default function FrenchTutor() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKey}
-            placeholder="Écrivez en français ici… (Enter pour envoyer)"
+            placeholder="Écrivez en français ici…"
             rows={2}
             style={{
               flex: 1, background: "none", border: "none",
-              color: t.text, fontSize: 14, lineHeight: 1.6,
+              color: t.text, fontSize: 16, lineHeight: 1.6,
               fontFamily: "inherit", maxHeight: 120, overflowY: "auto",
             }}
           />
           <button className="send-btn" onClick={sendMessage} disabled={loading || !input.trim()} style={{
-            width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+            /* 44px touch target */
+            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
             background: input.trim() ? cfg.color : t.sendDisabledBg,
             border: "none", cursor: input.trim() ? "pointer" : "default",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, transition: "background 0.2s, opacity 0.2s",
+            fontSize: 18, transition: "background 0.2s, opacity 0.2s",
             color: t.sendBtnText,
           }}>→</button>
         </div>
